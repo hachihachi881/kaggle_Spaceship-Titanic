@@ -155,3 +155,86 @@ False
 
 提供された乗客データを用いて、機械学習モデルを構築し、
 **乗客が別次元へ転送されたかどうかを高精度で予測すること**が目的です。
+
+---
+
+# 実装 (code.ipynb)
+
+## 使用ライブラリ
+
+- `pandas` / `numpy` : データ処理
+- `scikit-learn` : 前処理・モデル評価
+- `XGBoost` / `LightGBM` : 分類モデル
+
+## パイプライン概要
+
+### 1. データ読み込み
+
+`train.csv` と `test.csv` を読み込み、前処理のために結合 (`all_df`) します。
+
+```python
+all_df = pd.concat([df, test_df])
+```
+
+### 2. 特徴量エンジニアリング
+
+| 特徴量 | 内容 |
+|--------|------|
+| `TotalSpend` | 5つの船内施設の合計支出 |
+| `NoSpend` | 支出が0かどうか（冷凍睡眠との相関が高い） |
+| `LuxurySpend` | Spa + VRDeck（贅沢支出） |
+| `NecessitySpend` | RoomService + FoodCourt（生活支出） |
+| `Log_*` / `LogTotalSpend` | 各支出の対数変換（スキュー補正） |
+| `Deck` | Cabin から抽出したデッキ（A〜G） |
+| `CabinNum` | Cabin から抽出した区画番号 |
+| `Side` | Cabin から抽出した船のP/S側 |
+| `AgeBin` | 年齢を Child / Teen / Young / Adult / Senior に分類 |
+| `Group` / `GroupSize` | PassengerId からグループ情報を抽出 |
+| `IsAlone` | グループサイズが1かどうか（一人旅フラグ） |
+
+### 3. 前処理
+
+- 支出列の欠損値を `0` で補完
+- `pd.get_dummies` でカテゴリ変数をone-hot encoding
+- 残った欠損値を中央値 → `0` の順で補完
+
+### 4. モデル学習
+
+XGBoost と LightGBM の両方を学習し、バリデーション精度の高い方を採用します。
+
+**XGBoost パラメータ**
+```python
+XGBClassifier(n_estimators=500, learning_rate=0.05, max_depth=6,
+              subsample=0.8, colsample_bytree=0.8, early_stopping_rounds=30)
+```
+
+**LightGBM パラメータ**
+```python
+LGBMClassifier(n_estimators=500, learning_rate=0.05, max_depth=6,
+               subsample=0.8, colsample_bytree=0.8)
+```
+
+train/valid = 80/20 で分割し、early stopping で過学習を防ぎます。
+
+### 5. 精度推移
+
+| 手順 | モデル | Accuracy |
+|------|--------|----------|
+| ベースライン | LogisticRegression | 0.7746 |
+| 特徴量追加 | LogisticRegression | 0.7832 |
+| モデル刷新 | XGBoost / LightGBM | **0.8033** |
+
+### 6. 重要特徴量 (Top 5)
+
+1. `CabinNum`（区画番号）
+2. `LuxurySpend`（Spa + VRDeck）
+3. `Age`
+4. `FoodCourt`
+5. `TotalSpend`
+
+### 7. 提出ファイル生成
+
+```python
+submission.to_csv("subnission.csv", index=False)
+```
+
